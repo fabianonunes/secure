@@ -5,118 +5,115 @@ var  crypto		= require('crypto')
 	, qs		= require('querystring')
 	, jdefer	= require('../jdefer');
 
-var secure = {
+var secure = function(serverKey, model){
+	this.H = hashlib.sha256;
+	this.K = serverKey;
+	this.model = model;
+}
 
-	K : '1375ed62eba9bee2e7e71099347fc39c3e210e35e1c5c8a3d616fd9657f9e315',
-	H : hashlib.sha256,
+secure.prototype.login = function(username, password){
 
-	login : function(username, password){
+	var d	= jdefer()
+	, self	= this;
 
-		var d	= jdefer()
-		, self	= this
-		, User	= app.settings.models.user;
+	this.model.findByUsername(username)
+	.done(function(user){
+		d.resolve(self.createSession(user, password));
+	})
+	.fail(d.reject.bind(d));
 
-		User.findByUsername(username)
-		.done(function(user){
-			d.resolve(self.createSession(user, password));
-		})
-		.fail(d.reject.bind(d));
+	return d.promise();
 
-		return d.promise();
+};
 
-	},
+secure.prototype.createSession = function(user, password){
 
-	createSession : function(user, password){
+	var c_auth = this.aN(user.salt, password);
 
-		var c_auth = this.aN(user.salt, password);
+	if(user.auth === this.H(c_auth)) {
 
-		if(user.auth === this.H(c_auth)) {
+		var cookie = {
+			c: c_auth,
+			u: user.username,
+			x: Date.now()*1 + 2*36e5
+		};
 
-			var cookie = {
-				c: c_auth,
-				u: user.username,
-				x: Date.now()*1 + 2*36e5
-			};
+		cookie.s = this.hmac(
+			this.stringify(cookie),
+			this.hmac(cookie.u + cookie.x, this.K)
+		);
 
-			cookie.s = this.hmac(
-				this.stringify(cookie),
-				this.hmac(cookie.u + cookie.x, this.K)
-			);
+		return cookie;
 
-			return cookie;
+	} else return new Error('invalid password');
 
-		} else return new Error('invalid password');
+};
 
-	},
+secure.prototype.hmac = function(message, k){
+	var hmac = crypto.createHmac('sha256', k);
+	hmac.update(message);
+	return hmac.digest('hex');
+};
 
-	hmac: function(message, k){
-		var hmac = crypto.createHmac('sha256', k);
-		hmac.update(message);
-		return hmac.digest('hex');
-	},
+secure.prototype.authenticate = function(cookie){
 
-	authenticate : function(cookie){
+	var d		= jdefer()
+	, self		= this;
 
-		var d		= jdefer()
-		, User		= app.settings.models.user
-		, self		= this;
+	if(cookie.x > Date.now()){
 
-		if(cookie.x > Date.now()){
+		var key			= this.hmac([cookie.u, cookie.x].join(''), this.K)
+		, signature		= cookie.s
+		, message		= this.stringify(cookie);
 
-			var key			= this.hmac([cookie.u, cookie.x].join(''), this.K)
-			, signature		= cookie.s
-			, message		= this.stringify(cookie);
+		if(this.hmac(message, key) === signature){
 
-			if(this.hmac(message, key) === signature){
+			this.model.findByUsername(cookie.u)
+			.done(function(user){
+				if(self.H(cookie.c) === user.auth){
+					d.resolve(user);
+				} else {
+					d.reject(new Error('cookie invalid'));
+				}
+			})
+			.fail(d.reject.bind(d));
 
-				User.findByUsername(cookie.u)
-				.done(function(user){
-					if(self.H(cookie.c) === user.auth){
-						d.resolve(user);
-					} else {
-						d.reject(new Error('cookie invalid'));
-					}
-				})
-				.fail(d.reject.bind(d));
+		} else d.reject(new Error('cookie corruted'));
 
-			} else d.reject(new Error('cookie corruted'));
+	} else d.reject(new Error('cookie expired'));
 
-		} else d.reject(new Error('cookie expired'));
+	return d.promise();
 
-		return d.promise();
+};
 
-	},
+secure.prototype.aN = function(salt, pass){
+	for(i=0;i<1024;i++){ salt = this.H(salt+pass); }
+	return salt;
+};
 
-	aN : function(salt, pass){
-		for(i=0;i<1024;i++){ salt = this.H(salt+pass); }
-		return salt;
-	},
+secure.prototype.stringify = function(cookie){
+	delete cookie.s;
+	return Object.keys(cookie).sort().map(function(k){
+		return k+"."+cookie[k];
+	}).join('-');
+};
 
-	stringify : function(cookie){
-		delete cookie.s;
-		return Object.keys(cookie).sort().map(function(k){
-			return k+"."+cookie[k];
-		}).join('-');
-	},
+secure.prototype.middleware = function(req, res, next){
 
-	middleware : function(req, res, next){
-
-		if(~["/login", "/user"].indexOf(req.url) && req.method == "POST"){
-			return next();
-		}
-
-		// TODO: criar uma função que além de parsear,
-		// tb valida oo parametros do cookie
-		var cookie = qs.parse(req.cookies.v, '-', '.');
-
-		this.authenticate(cookie)
-			.done(next.bind(res, null))
-			.fail(res.send.bind(res, null, 403));
-
+	if(~["/login", "/user"].indexOf(req.url) && req.method == "POST"){
+		return next();
 	}
+
+	// TODO: criar uma função que além de parsear,
+	// tb valida oo parametros do cookie
+	var cookie = qs.parse(req.cookies.v, '-', '.');
+
+	this.authenticate(cookie)
+	.done(next.bind(res, null))
+	.fail(res.send.bind(res, null, 403));
 
 }
 
-_.bindAll(secure);
-
-module.exports = secure;
+module.exports = function(serverKey, model){
+	return new secure(serverKey, model);
+};
