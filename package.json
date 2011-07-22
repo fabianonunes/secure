@@ -1,0 +1,7 @@
+{
+	"name" : "secure",
+	"main" : "./secure.js",
+	"dependencies": {
+		"underscore": "*"
+	}
+}
