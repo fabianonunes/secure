@@ -6,5 +6,6 @@
 		"underscore": "*"
 		, "vows" : "*"
 		, "should" : "*"
+		, "hashlib" : "*"
 	}
 }
