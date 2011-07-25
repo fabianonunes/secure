@@ -1,6 +1,7 @@
 {
 	"name" : "secure",
-	"main" : "./secure.js",
+	"main" : "./lib/secure.js",
+	"version": "0.0.1",
 	"dependencies": {
 		"underscore": "*"
 	}
