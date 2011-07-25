@@ -1,33 +1,10 @@
-var sinon = require('sinon')
-, vows = require('vows')
-, should = require('should')
-, assert = require('assert')
-, secure = require('secure');
 
-var mockStore = {
-	findByUsername : function()	{
-		
-		var user = {
-			username: 'falha404'
-			, salt: 'salt'
-			, auth: 'ae73218f48ae039148ba5a64072e90114d5039c4953bf43e7a4294794c6a222b'
-		};
+var vows	= require('vows')
+, should	= require('should')
+, secure	= require('secure')
+, store		= require('./mocks')
 
-		return {
-			done : function(arg){
-				arg(user);
-				return this;
-			},
-			fail : function(arg) {
-				arg(user);
-				return this;
-			}
-		};
-
-	}
-};
-
-var t = secure('secret', mockStore);
+var t = secure('secret', store.mockStore);
 
 vows.describe('secure').addBatch({
 	'A successful login' : {
@@ -36,6 +13,23 @@ vows.describe('secure').addBatch({
 		},
 		'must return a valid cookie' : function(cookie){
 			cookie.should.have.keys('c', 'u', 'x', 's');
+		},
+		'must enable subsequent logins' : {
+			topic : function(cookie){
+				t.authenticate(cookie).always(this.callback.bind(this, null));
+			},
+			'returning a User instance' : function(user){
+				user.should.have.keys('username', 'salt', 'auth');
+			}
+		}
+	},
+	'A denied login' : {
+		topic : function(){
+			t.login('falha404', 'batman').always(this.callback.bind(this, null))
+		},
+		'must return a "invalid password" error instance' : function(error){
+			error.should.be.an.instanceof(Error);
+			error.message.should.equal('invalid password');
 		}
 	}
 }).export(module);
