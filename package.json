@@ -7,5 +7,8 @@
 		, "vows" : "*"
 		, "should" : "*"
 		, "hashlib" : "*"
+	}, 
+	"scripts": {
+		"test": "vows test/*.test.js --spec"
 	}
 }
